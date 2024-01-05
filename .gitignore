@@ -1,0 +1,9 @@
+# Ignoring the upload of the AWS RDS crednetials, local credentials and .pyc files
+
+
+db_creds.yaml
+local_creds.yaml
+
+
+__pycache__/
+*.py[cod]
