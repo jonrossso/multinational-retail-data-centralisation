@@ -43,13 +43,13 @@ class DataCleaning:
         # I create a copy of the DataFrame to avoid changes to the original data
         cleaned_df = df.copy()
 
-        # Card numbers are masked for privacy, revealing only the last four digits
-        cleaned_df['card_number'] = (
-            cleaned_df['card_number']
-            .astype(str)
-            .str.slice(-4)
-            .apply(lambda x: f"XXXX-XXXX-XXXX-{x}")
-        )
+        # # Card numbers are masked for privacy, revealing only the last four digits
+        # cleaned_df['card_number'] = (
+        #     cleaned_df['card_number']
+        #     .astype(str)
+        #     .str.slice(-4)
+        #     .apply(lambda x: f"XXXX-XXXX-XXXX-{x}")
+        # )
 
         # Standardising and Validating Date Formats
         # First, convert the columns to datetime objects
@@ -58,12 +58,17 @@ class DataCleaning:
         cleaned_df['date_payment_confirmed'] = pd.to_datetime(cleaned_df['date_payment_confirmed'],
                                                                errors='coerce')
 
+        # Removing non-numeric characters from card_number column
+
+        cleaned_df['card_number']= cleaned_df['card_number'].astype('string')
+        cleaned_df['card_number'] = cleaned_df['card_number'].str.replace('?', '')
+        cleaned_df['card_number'] = cleaned_df['card_number'].where(cleaned_df['card_number'].str.contains(r'^\d+$'), np.nan)
+
        # Dates are standardised to a uniform format
         cleaned_df.loc[cleaned_df['expiry_date'].notnull(),
                         'expiry_date'] = cleaned_df['expiry_date'].dt.strftime('%Y-%m-%d')
         cleaned_df.loc[cleaned_df['date_payment_confirmed'].notnull(),
                         'date_payment_confirmed'] = cleaned_df['date_payment_confirmed'].dt.strftime('%Y-%m-%d')
-
 
         # Dates that could not be converted are dropped to ensure consistency
         cleaned_df = cleaned_df.dropna(subset=['expiry_date', 'date_payment_confirmed'])
@@ -75,8 +80,8 @@ class DataCleaning:
         for col in cleaned_df.select_dtypes(include=['object']):
             cleaned_df[col] = cleaned_df[col].str.strip()
 
-        # Remaining NaNs are filled with a placeholder value to avoid processing errors
-        cleaned_df.fillna('Unknown', inplace=True)
+        # # Remaining NaNs are filled with a placeholder value to avoid processing errors
+        # cleaned_df.fillna('Unknown', inplace=True)
 
         return cleaned_df
 
@@ -107,7 +112,7 @@ class DataCleaning:
     @staticmethod
     def clean_store_data(df):
         """
-        I use this method to sanitise the store data DataFrame, ensuring it's free from null values,
+        I use this method to clean the store data DataFrame, ensuring it's free from null values,
         and the store types are capitalised appropriately. It's a key step in data preprocessing.
         """
         cleaned_df = df.copy()
@@ -119,6 +124,12 @@ class DataCleaning:
         cleaned_df['opening_date'] = pd.to_datetime(cleaned_df['opening_date'], errors='coerce')
         cleaned_df.dropna(subset=['opening_date'], inplace=True)  # Drop rows where opening_date was invalid
 
+        # Removing rows with null 'store_type' values 
+        cleaned_df = cleaned_df.dropna(subset=['store_type'])
+
+        # Removing rows with null 'store_code' values 
+
+        cleaned_df = cleaned_df.dropna(subset=['store_code'])
 
          # I remove unwanted columns that may have been added erroneously
         cleaned_df.drop(columns=["lat"], errors='ignore', inplace=True)
@@ -130,15 +141,29 @@ class DataCleaning:
         cleaned_df['locality'] = cleaned_df['locality'].str.title()
         cleaned_df['store_type'] = cleaned_df['store_type'].str.title()
 
+        # I correct any prefixed 'ee' in the continent names
+        cleaned_df['continent'] = cleaned_df['continent'].str.replace(r'^ee', '', regex=True)
+
         # Any remaining NaNs are replaced with a placeholder to keep the DataFrame complete
         cleaned_df.fillna('Unknown', inplace=True)
 
-        # Latitude and longitude data types are enforced to be numeric for geospatial analysis
+        # Latitude and longitude data types are enforced to be numeric
         cleaned_df['latitude'] = pd.to_numeric(cleaned_df['latitude'], errors='coerce')
         cleaned_df['longitude'] = pd.to_numeric(cleaned_df['longitude'])
-        return cleaned_df
-    
 
+        # Cleaning staff_numbers, removing any letters and keeping only numbers
+        cleaned_df['staff_numbers'] = cleaned_df['staff_numbers'].astype(str).apply(lambda x: ''.join(filter(str.isdigit, x)))
+
+        # Converting cleaned numbers back to integers
+        cleaned_df['staff_numbers'] = pd.to_numeric(cleaned_df['staff_numbers'], errors='coerce')
+
+        # Handling possible NaNs after conversion (if any non-numeric value was present)
+        cleaned_df['staff_numbers'] = cleaned_df['staff_numbers'].fillna(0).astype(int)
+        
+        # Removing rows with null 'locality' values from the store details.
+        cleaned_df = cleaned_df.dropna(subset=['locality'])
+        
+        return cleaned_df
     
 
     @staticmethod
@@ -204,11 +229,12 @@ class DataCleaning:
         """
         I use this method to clean the orders data, including handling UUIDs and standardising text fields.
         """
-        # Defining the UUID regex pattern
-        uuid_pattern = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
 
         # Making a copy of the DataFrame to avoid modifying the original data
         cleaned_df = df.copy()
+        
+        # Defining the UUID regex pattern
+        uuid_pattern = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
 
         # Dropping columns that are not required for analysis.
         cleaned_df.drop(columns=["1", "first_name", "last_name", "level_0"], errors='ignore', inplace=True)
@@ -217,9 +243,9 @@ class DataCleaning:
         cleaned_df['user_uuid'] = cleaned_df['user_uuid'].apply(lambda x: x if x and uuid_pattern.match(x) else None)
         cleaned_df['date_uuid'] = cleaned_df['date_uuid'].apply(lambda x: x if x and uuid_pattern.match(x) else None)
 
-
-
-
+        # Removing rows with null 'store_code' values
+        cleaned_df = cleaned_df.dropna(subset=['store_code'])
+    
         # Ensuring product_code is a string and then converting to uppercase for consistency
         cleaned_df['product_code'] = cleaned_df['product_code'].astype(str).str.upper()
         # Handling NaN values after conversion, if there were any
@@ -251,6 +277,9 @@ class DataCleaning:
         
         # Replacing underscores with spaces in the 'time_period' column for better readability.
         # Standardising the text to ensure uniformity across the dataset.
+
+        # Droing rows where 'timestamp' is null
+        cleaned_df = cleaned_df.dropna(subset=['timestamp'])
         
         time_periods = {
             'Morning': 'Morning',
